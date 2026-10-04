@@ -25,7 +25,7 @@ The system utilizes a Human-in-the-Loop (HITL) pipeline:
 ### 1. Clone the repository
 ```bash
 git clone https://github.com/LuckyTaorem/Agentic-Data-Migration-Planner-and-Reconciliation-Workbench
-cd migration-workbench
+cd Agentic-Data-Migration-Planner-and-Reconciliation-Workbench
 ```
 
 ### 2. Install Dependencies
