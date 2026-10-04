@@ -1,0 +1,551 @@
+<!-- static/index.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agentic Data Migration Workbench</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .fade-in { animation: fadeIn 0.4s ease-in-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800 font-sans antialiased min-h-screen">
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container" class="fixed top-5 right-5 z-50 flex flex-col gap-2"></div>
+
+    <div class="max-w-6xl mx-auto py-10 px-6 space-y-8">
+        
+        <header class="border-b pb-6">
+            <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Data Migration Workbench</h1>
+            <p class="text-slate-500 mt-2">AI-driven mapping, deterministic dry runs, and idempotent execution.</p>
+        </header>
+        
+        <!-- Phase 0: Configuration -->
+        <section class="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-sm">Phase 0</span> 
+                Project Configuration
+            </h2>
+            
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Source Schema</label>
+                    <textarea id="in-source" class="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-shadow">[
+  {"name": "full_name", "type": "VARCHAR"},
+  {"name": "email_address", "type": "VARCHAR"},
+  {"name": "signup_date", "type": "STRING"}
+]</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Target Schema</label>
+                    <textarea id="in-target" class="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-shadow">[
+  {"name": "first_name", "type": "VARCHAR"},
+  {"name": "last_name", "type": "VARCHAR"},
+  {"name": "email", "type": "VARCHAR", "constraints": "UNIQUE, NOT NULL"},
+  {"name": "created_at", "type": "TIMESTAMP"},
+  {"name": "status", "type": "VARCHAR", "constraints": "NOT NULL"}
+]</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Sample Data (Row 3 will fail validation)</label>
+                    <textarea id="in-sample" class="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-shadow">[
+  {"full_name": "John Doe", "email_address": "john@example.com", "signup_date": "10-24-2023"},
+  {"full_name": "Jane Smith", "email_address": "jane@test.com", "signup_date": "11-02-2023"},
+  {"full_name": "No Email User", "email_address": null, "signup_date": "12-01-2023"}
+]</textarea>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Transformation Rules</label>
+                    <textarea id="in-rules" class="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-lg font-mono text-xs focus:ring-2 focus:ring-blue-500 outline-none transition-shadow">[
+  "split_name(full_name) -> first_name, last_name",
+  "cast_to_timestamp(signup_date) -> created_at",
+  "default_value('ACTIVE') -> status",
+  "map(email_address) -> email"
+]</textarea>
+                </div>
+            </div>
+            
+            <div class="mt-6 flex items-end gap-4">
+                <div class="flex-grow">
+                    <label class="block text-sm font-medium text-slate-700 mb-1">Target Database URL</label>
+                    <input type="text" id="in-db" value="sqlite:///data/workbench.db" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg font-mono text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <button id="btn-save-config" class="bg-slate-800 text-white px-6 py-2.5 rounded-lg font-medium hover:bg-slate-900 transition-all flex-shrink-0">
+                    Save Configuration
+                </button>
+            </div>
+        </section>
+
+        <!-- Phase 1: Planning -->
+        <section id="plan-section" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 opacity-50 pointer-events-none transition-all">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded text-sm">Phase 1</span> 
+                AI Discovery & Planning
+            </h2>
+            <button id="btn-plan" class="bg-blue-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-blue-700 transition-colors">
+                Generate AI Migration Plan
+            </button>
+            <!-- Changed from <pre> to <div> for rich UI rendering -->
+            <div id="plan-output" class="mt-6 hidden fade-in space-y-6"></div>
+        </section>
+
+        <!-- Phase 2: Approval -->
+        <section id="approval-section" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 opacity-50 pointer-events-none transition-all">
+            <h2 class="text-lg font-semibold text-slate-800 mb-2 flex items-center gap-2">
+                <span class="bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded text-sm">Phase 2</span> 
+                Human Approval
+            </h2>
+            <p class="text-slate-600 text-sm mb-4">Review the AI mappings, risks, and answer clarification questions to lock the plan.</p>
+            <div class="flex items-center gap-4">
+                <button id="btn-approve" class="bg-emerald-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-emerald-700 transition-colors">
+                    Approve Plan v1.0
+                </button>
+                <span id="approval-status" class="font-medium text-emerald-600 hidden flex items-center gap-1">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                    Approved & Locked
+                </span>
+            </div>
+        </section>
+
+        <!-- Phase 3: Dry Run -->
+        <section id="dry-run-section" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 opacity-50 pointer-events-none transition-all">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-purple-100 text-purple-700 px-2 py-0.5 rounded text-sm">Phase 3</span> 
+                Deterministic Dry Run
+            </h2>
+            <button id="btn-dry-run" class="bg-purple-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-purple-700 transition-colors">
+                Execute Dry Run Validation
+            </button>
+            
+            <div id="dry-run-metrics" class="mt-6 hidden grid grid-cols-3 gap-4 text-center fade-in">
+                <div class="bg-slate-50 border border-slate-200 p-4 rounded-xl">
+                    <div class="text-3xl font-bold text-slate-700" id="metric-total">0</div>
+                    <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mt-1">Total Source</div>
+                </div>
+                <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-xl">
+                    <div class="text-3xl font-bold text-emerald-600" id="metric-valid">0</div>
+                    <div class="text-xs uppercase tracking-wider text-emerald-600 font-semibold mt-1">Ready for Insert</div>
+                </div>
+                <div class="bg-rose-50 border border-rose-200 p-4 rounded-xl">
+                    <div class="text-3xl font-bold text-rose-600" id="metric-quarantine">0</div>
+                    <div class="text-xs uppercase tracking-wider text-rose-600 font-semibold mt-1">Quarantined</div>
+                </div>
+            </div>
+            
+            <div id="quarantine-box" class="mt-4 hidden fade-in">
+                <h3 class="text-sm font-bold text-rose-700 mb-2 uppercase tracking-wider">Quarantine Evidence</h3>
+                <div id="quarantine-evidence" class="bg-rose-50 border border-rose-200 text-rose-900 p-4 rounded-lg text-sm overflow-x-auto space-y-3"></div>
+            </div>
+        </section>
+
+        <!-- Phase 4: Live Execution -->
+        <section id="live-section" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 opacity-50 pointer-events-none transition-all">
+            <h2 class="text-lg font-semibold text-slate-800 mb-4 flex items-center gap-2">
+                <span class="bg-red-100 text-red-700 px-2 py-0.5 rounded text-sm">Phase 4</span> 
+                Live Execution & Reconciliation
+            </h2>
+            <button id="btn-live" class="bg-red-600 text-white px-5 py-2 rounded-lg font-medium hover:bg-red-700 transition-colors">
+                Execute Live Migration
+            </button>
+            <div id="live-output" class="mt-4 hidden fade-in"></div>
+            
+            <div id="rollback-box" class="mt-6 border-t border-slate-200 pt-6 hidden fade-in">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-semibold text-slate-800">Rollback Manager</h3>
+                        <p class="text-sm text-slate-500">Revert this exact batch using its isolated signature.</p>
+                    </div>
+                    <button id="btn-rollback" class="bg-slate-800 text-white px-4 py-2 rounded-lg font-medium hover:bg-slate-900 transition-colors">
+                        Rollback Batch
+                    </button>
+                </div>
+                <pre id="rollback-output" class="mt-4 bg-slate-50 border border-slate-200 p-4 rounded-lg text-xs font-mono hidden"></pre>
+            </div>
+        </section>
+
+        <!-- Phase 5: Audit Trail & History -->
+        <section id="audit-section" class="bg-white p-6 rounded-xl shadow-sm border border-slate-200 opacity-50 pointer-events-none transition-all mt-8">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    <span class="bg-slate-800 text-white px-2 py-0.5 rounded text-sm">Phase 5</span> 
+                    Audit Trail & History
+                </h2>
+                <button id="btn-refresh-audit" class="text-sm text-blue-600 hover:text-blue-800 font-medium">
+                    ↻ Refresh Logs
+                </button>
+            </div>
+            <p class="text-slate-600 text-sm mb-4">Immutable ledger of planning, approvals, dry-runs, live executions, and rollbacks.</p>
+            
+            <div class="overflow-x-auto border border-slate-200 rounded-lg">
+                <table class="w-full text-left text-sm border-collapse bg-white">
+                    <thead>
+                        <tr class="bg-slate-50 text-slate-700 border-b border-slate-200">
+                            <th class="p-4 font-semibold">Timestamp</th>
+                            <th class="p-4 font-semibold">Event Type</th>
+                            <th class="p-4 font-semibold">Batch ID</th>
+                            <th class="p-4 font-semibold">Metrics / Details</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-table-body" class="divide-y divide-slate-100">
+                        <!-- Audit rows populated dynamically -->
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // --- UI Utilities ---
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const bg = type === 'success' ? 'bg-emerald-500' : (type === 'error' ? 'bg-rose-500' : 'bg-blue-500');
+            toast.className = `${bg} text-white px-4 py-3 rounded shadow-lg text-sm font-medium fade-in flex items-center gap-2`;
+            toast.innerHTML = message;
+            container.appendChild(toast);
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                toast.style.transition = 'all 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+
+        function unlockSection(id) {
+            const el = document.getElementById(id);
+            el.classList.remove('opacity-50', 'pointer-events-none');
+        }
+
+        // --- Application State ---
+        let migrationContext = null;
+        let currentPlanId = null;
+        let currentBatchId = null;
+
+        // --- Event Handlers ---
+        document.getElementById('btn-save-config').onclick = () => {
+            try {
+                migrationContext = {
+                    source_schema: JSON.parse(document.getElementById('in-source').value),
+                    target_schema: JSON.parse(document.getElementById('in-target').value),
+                    target_table_name: "live_users_table",
+                    transformation_rules: JSON.parse(document.getElementById('in-rules').value),
+                    sample_data: JSON.parse(document.getElementById('in-sample').value),
+                    target_db_url: document.getElementById('in-db').value
+                };
+                
+                const btn = document.getElementById('btn-save-config');
+                btn.innerText = "Config Saved ✓";
+                btn.classList.replace('bg-slate-800', 'bg-emerald-600');
+                btn.classList.replace('hover:bg-slate-900', 'hover:bg-emerald-700');
+                
+                showToast("Configuration saved successfully!");
+                unlockSection('plan-section');
+            } catch (e) {
+                showToast("Invalid JSON in configuration.", 'error');
+            }
+        };
+
+        document.getElementById('btn-plan').onclick = async () => {
+            const btn = document.getElementById('btn-plan');
+            btn.innerText = "Analyzing schemas...";
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/plan/generate', { 
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(migrationContext)
+                });
+                
+                if(!res.ok) throw new Error(await res.text());
+                
+                const data = await res.json();
+                currentPlanId = data.plan_id;
+                const p = data.proposal;
+                
+                // --- Build User-Friendly HTML instead of JSON ---
+                // --- Build User-Friendly HTML instead of JSON ---
+                let html = `
+                    <div class="bg-blue-50 p-4 rounded-lg border border-blue-100">
+                        <h3 class="font-bold text-blue-900 mb-1">Architect Summary</h3>
+                        <p class="text-sm text-blue-800">${p.summary}</p>
+                    </div>
+
+                    <div>
+                        <h3 class="font-bold text-slate-800 mb-3 border-b pb-2">Proposed Field Mappings</h3>
+                        <div class="overflow-x-auto border border-slate-200 rounded-lg">
+                            <table class="w-full text-left text-sm border-collapse bg-white">
+                                <thead>
+                                    <tr class="bg-slate-50 text-slate-600 border-b border-slate-200">
+                                        <th class="p-3 font-semibold">Source Field</th>
+                                        <th class="p-3 font-semibold">Target Field</th>
+                                        <th class="p-3 font-semibold">Transformation Rule</th>
+                                        <th class="p-3 font-semibold">Risk Warning</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-100">
+                                    ${p.mappings.map(m => {
+                                        // Foolproof check: Treat 'none', 'n/a', 'null', or empty strings as safe
+                                        const hasRisk = m.risk_warning && !['none', 'n/a', 'null', 'false'].includes(m.risk_warning.toString().trim().toLowerCase());
+                                        
+                                        return `
+                                        <tr class="hover:bg-slate-50 transition-colors">
+                                            <td class="p-3 font-mono text-blue-600">${m.source_field}</td>
+                                            <td class="p-3 font-mono text-emerald-600">${m.target_field}</td>
+                                            <td class="p-3 text-slate-600">
+                                                <span class="bg-slate-200 text-slate-700 px-2 py-0.5 rounded text-xs">${m.transformation_rule || 'Direct Map'}</span>
+                                            </td>
+                                            <td class="p-3 text-xs">
+                                                ${hasRisk 
+                                                    ? `<span class="text-rose-600 font-medium">${m.risk_warning}</span>` 
+                                                    : `<span class="text-slate-400 italic">No risk detected</span>`
+                                                }
+                                            </td>
+                                        </tr>
+                                    `}).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="bg-amber-50 p-4 rounded-lg border border-amber-200 shadow-sm">
+                            <h3 class="font-bold text-amber-900 mb-2">Missing & Incompatible Fields</h3>
+                            <ul class="text-sm space-y-1">
+                                ${p.incompatible_or_missing_fields && p.incompatible_or_missing_fields.length > 0 
+                                    ? p.incompatible_or_missing_fields.map(f => `<li class="list-disc ml-5 text-amber-800">${f}</li>`).join('')
+                                    : `<li class="list-none text-emerald-700 font-medium flex items-center gap-1">
+                                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                                        All fields are compatible
+                                       </li>`
+                                }
+                            </ul>
+                        </div>
+                        
+                        <div class="bg-purple-50 p-4 rounded-lg border border-purple-200 shadow-sm">
+                            <h3 class="font-bold text-purple-900 mb-2">Clarification Needed</h3>
+                            <ul class="text-sm space-y-2">
+                                ${p.clarification_questions && p.clarification_questions.length > 0
+                                    ? p.clarification_questions.map(q => `<li class="list-disc ml-5 text-purple-800"><strong>${q.field}:</strong>${q.question}</li>`).join('')
+                                    : `<li class="list-none text-slate-500 italic">✓ No manual clarifications required</li>`
+                                }
+                            </ul>
+                        </div>
+                    </div>
+                `;
+                
+                const out = document.getElementById('plan-output');
+                out.innerHTML = html;
+                out.classList.remove('hidden');
+                
+                showToast("AI Migration Plan generated.");
+                unlockSection('approval-section');
+                await refreshAuditLog();
+            } catch(e) {
+                showToast("Error generating plan.", 'error');
+                console.error(e);
+            } finally {
+                btn.innerText = "Regenerate AI Plan";
+                btn.disabled = false;
+            }
+        };
+
+        document.getElementById('btn-approve').onclick = async () => {
+            const payload = { status: "approved", answers_to_clarifications: {"status": "Set to ACTIVE"} };
+            await fetch(`/plan/${currentPlanId}/review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            
+            document.getElementById('btn-approve').classList.add('hidden');
+            document.getElementById('approval-status').classList.remove('hidden');
+            showToast("Plan locked. Ready for validation.");
+            unlockSection('dry-run-section');
+            await refreshAuditLog();
+        };
+
+        document.getElementById('btn-dry-run').onclick = async () => {
+            const res = await fetch(`/execute/${currentPlanId}/dry-run`, { method: 'POST' });
+            const data = await res.json();
+            
+            document.getElementById('dry-run-metrics').classList.remove('hidden');
+            document.getElementById('metric-total').innerText = data.metrics.total_source_records;
+            document.getElementById('metric-valid').innerText = data.metrics.transformed_successfully;
+            document.getElementById('metric-quarantine').innerText = data.metrics.quarantined;
+
+            if (data.metrics.quarantined > 0) {
+                const qOut = document.getElementById('quarantine-evidence');
+                // Format the quarantine data into a readable list
+                qOut.innerHTML = data.sample_quarantined.map((q, index) => {
+                    const errorTags = q.field_errors.map(e => 
+                        `<span class="bg-rose-200 text-rose-800 px-2 py-0.5 rounded text-xs font-bold border border-rose-300">
+                            ${e.field}: ${e.error}
+                        </span>`
+                    ).join(' ');
+                    const rawData = JSON.stringify(q.raw_payload).substring(0, 100) + '...';
+                    
+                    return `
+                    <div class="${index > 0 ? 'border-t border-rose-200 pt-3' : ''}">
+                        <div class="mb-2 flex flex-wrap gap-2 items-center">
+                            <span class="text-rose-600 font-bold text-xs uppercase tracking-wider">Issue:</span> 
+                            ${errorTags}
+                        </div>
+                        <div class="text-xs text-rose-700/70 font-mono bg-rose-100/50 p-2 rounded">
+                            Original Row: ${rawData}
+                        </div>
+                    </div>`;
+                }).join('');
+                document.getElementById('quarantine-box').classList.remove('hidden');
+            }
+
+            showToast("Dry Run complete.");
+            unlockSection('live-section');
+            await refreshAuditLog(); // Trigger audit refresh
+        };
+
+        // --- 2. User-Friendly Live Execution & Reconciliation Formatting ---
+        document.getElementById('btn-live').onclick = async () => {
+            const res = await fetch(`/execute/${currentPlanId}/live`, { method: 'POST' });
+            const data = await res.json();
+            
+            currentBatchId = data.batch_id;
+            const ex = data.execution;
+            const rc = data.reconciliation;
+            
+            // Fixed: Pointing to reconciliation_status
+            const reconColor = rc.reconciliation_status === 'PASSED' ? 'text-emerald-700 bg-emerald-100 border-emerald-300' : 'text-rose-700 bg-rose-100 border-rose-300';
+            const reconIcon = rc.reconciliation_status === 'PASSED' ? '✓' : '⚠';
+
+            const liveHtml = `
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="bg-white border border-slate-200 p-4 rounded-lg shadow-sm">
+                    <h3 class="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Database Execution</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex justify-between">
+                            <span class="text-slate-600">Successfully Inserted</span>
+                            <span class="font-bold text-emerald-600">${ex.inserted} rows</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span class="text-slate-600">Skipped (Idempotent Prevented)</span>
+                            <span class="font-bold text-amber-600">${ex.skipped} rows</span>
+                        </li>
+                    </ul>
+                </div>
+                <div class="bg-white border border-slate-200 p-4 rounded-lg shadow-sm">
+                    <h3 class="font-bold text-slate-800 border-b border-slate-100 pb-2 mb-3">Reconciliation Audit</h3>
+                    <ul class="space-y-2 text-sm">
+                        <li class="flex justify-between items-center">
+                            <span class="text-slate-600">Balance Check</span>
+                            <span class="font-bold px-2 py-0.5 rounded text-xs border ${reconColor}">${reconIcon} ${rc.reconciliation_status}</span>
+                        </li>
+                        <li class="flex justify-between">
+                            <span class="text-slate-600">Accounted For (Target + Quarantine)</span>
+                            <!-- Fixed: Pointing to the nested metrics object -->
+                            <span class="font-bold text-slate-800">${rc.metrics.total_accounted_for} / ${rc.metrics.total_source_records}</span>
+                        </li>
+                    </ul>
+                </div>
+            </div>`;
+
+            const out = document.getElementById('live-output');
+            out.innerHTML = liveHtml;
+            out.classList.remove('hidden');
+
+            document.getElementById('rollback-box').classList.remove('hidden');
+            document.getElementById('btn-rollback').innerText = `Rollback ${currentBatchId.substring(0, 15)}...`;
+            
+            showToast("Live migration executed!", "success");
+            await refreshAuditLog();
+        };
+
+        // Helper function to turn JSON metrics into readable text
+        function formatAuditMetrics(type, metrics) {
+            if (!metrics) return '<span class="text-slate-400 italic">No details recorded</span>';
+            try {
+                if (type === 'PLAN_GENERATED') {
+                    return `Analyzed <strong>${metrics.total_source_fields}</strong> source fields.`;
+                } else if (type === 'PLAN_APPROVED' || type === 'PLAN_REJECTED') {
+                    return metrics.answers_provided ? 'User provided answers to AI clarifications.' : 'No manual clarifications provided.';
+                } else if (type === 'DRY_RUN_EXECUTED') {
+                    return `Validated: <strong class="text-emerald-600">${metrics.transformed_successfully} OK</strong>, <strong class="text-rose-600">${metrics.quarantined} Failed</strong>.`;
+                } else if (type === 'LIVE_EXECUTION') {
+                    const ex = metrics.execution;
+                    const rc = metrics.reconciliation;
+                    // Fixed: Pointing to rc.reconciliation_status
+                    return `Inserted <strong>${ex.inserted}</strong> rows. Recon status: <strong class="${rc.reconciliation_status === 'PASSED' ? 'text-emerald-600' : 'text-rose-600'}">${rc.reconciliation_status}</strong>.`;
+                } else if (type === 'ROLLBACK_EXECUTED') {
+                    return `<span class="text-rose-600 font-medium">Reverted batch. Removed from Target and Quarantine.</span>`;
+                }
+                return JSON.stringify(metrics);
+            } catch (e) {
+                return JSON.stringify(metrics);
+            }
+        }
+
+        async function refreshAuditLog() {
+            if (!currentPlanId) {
+                showToast("No active plan to fetch logs for.", "error");
+                return;
+            }
+            
+            try {
+                const res = await fetch(`/execute/${currentPlanId}/audit`);
+                const logs = await res.json();
+                
+                const tbody = document.getElementById('audit-table-body');
+                tbody.innerHTML = logs.map(log => {
+                    let eventColor = "text-blue-600 bg-blue-50 border-blue-200";
+                    if (log.event_type.includes("APPROVED")) eventColor = "text-emerald-700 bg-emerald-50 border-emerald-200";
+                    if (log.event_type.includes("ROLLBACK")) eventColor = "text-rose-700 bg-rose-50 border-rose-200";
+                    if (log.event_type.includes("LIVE")) eventColor = "text-purple-700 bg-purple-50 border-purple-200";
+
+                    return `
+                        <tr class="hover:bg-slate-50 transition-colors">
+                            <td class="p-4 text-slate-500 whitespace-nowrap text-xs font-mono">
+                                ${new Date(log.timestamp).toLocaleString()}
+                            </td>
+                            <td class="p-4 font-semibold">
+                                <span class="px-2 py-1 rounded text-xs border ${eventColor}">
+                                    ${log.event_type.replace(/_/g, ' ')}
+                                </span>
+                            </td>
+                            <td class="p-4 font-mono text-xs text-slate-400">
+                                ${log.batch_id ? log.batch_id.substring(0,18)+'...' : '<span class="italic text-slate-300">N/A</span>'}
+                            </td>
+                            <td class="p-4 text-sm text-slate-700">
+                                ${formatAuditMetrics(log.event_type, log.metrics)}
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+                
+                unlockSection('audit-section');
+            } catch (e) {
+                console.error("Failed to fetch audit logs", e);
+            }
+        }
+
+        document.getElementById('btn-refresh-audit').onclick = async () => {
+            const btn = document.getElementById('btn-refresh-audit');
+            btn.innerText = "↻ Refreshing...";
+            await refreshAuditLog();
+            setTimeout(() => { btn.innerText = "↻ Refresh Logs"; }, 500);
+        };
+
+        document.getElementById('btn-rollback').onclick = async () => {
+            const res = await fetch(`/execute/${currentPlanId}/rollback/${currentBatchId}`, { method: 'POST' });
+            const data = await res.json();
+            
+            const out = document.getElementById('rollback-output');
+            out.innerText = JSON.stringify(data, null, 2);
+            out.classList.remove('hidden');
+            showToast("Batch successfully rolled back.", "success");
+            await refreshAuditLog();
+        };
+    </script>
+</body>
+</html>

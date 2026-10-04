@@ -1,0 +1,14 @@
+# Environments
+.env
+.venv
+env/
+venv/
+__pycache__/
+
+# Database (CRITICAL: Do not upload your local SQLite data)
+data/
+*.db
+*.sqlite3
+
+# OS Files
+.DS_Store
