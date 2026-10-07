@@ -15,6 +15,11 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Agentic Data Migration Workbench")
 
+@app.get("/ping")
+async def ping():
+    """Lightweight endpoint for cron-job.org to keep the server awake."""
+    return {"status": "alive"}
+
 app.include_router(planning_router)
 app.include_router(approval_router)
 app.include_router(execution_router)
